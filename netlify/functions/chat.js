@@ -16,14 +16,16 @@ exports.handler = async function(event) {
 
 const models = [
   "deepseek/deepseek-chat:free",
-  "qwen/qwen2.5-7b-instruct:free",
-  "google/gemma-2-9b-it:free"
+  "google/gemma-2-9b-it:free",
+  "mistralai/mistral-7b-instruct:free"
 ];
 
     let lastError = null;
 
-   for (const model of models) {
+for (const model of models) {
   try {
+    console.log("Trying model:", model);
+
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -52,14 +54,14 @@ const models = [
 
     const data = await response.json();
 
-    console.log("Trying model:", model, data);
+    console.log("Response for model:", model, data);
 
-    /* Skip unavailable models */
     if (
       data?.error?.message?.includes("No endpoints found") ||
       data?.error?.message?.includes("Provider returned error") ||
-      data?.error?.message?.includes("temporarily unavailable")
+      data?.error?.message?.includes("not a valid model ID")
     ) {
+      console.log("Skipped model:", model);
       continue;
     }
 
@@ -67,6 +69,8 @@ const models = [
       response.ok &&
       data?.choices?.[0]?.message?.content
     ) {
+      console.log("SUCCESS MODEL:", model);
+
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -76,10 +80,10 @@ const models = [
       };
     }
 
-    lastError =
-      `${model}: ${data?.error?.message || "Unknown error"}`;
+    lastError = `${model}: ${data?.error?.message || "Unknown error"}`;
 
   } catch (err) {
+    console.log("FAILED MODEL:", model, err.message);
     lastError = `${model}: ${err.message}`;
   }
 }
