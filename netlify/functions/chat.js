@@ -14,11 +14,12 @@ exports.handler = async function(event) {
     const body = JSON.parse(event.body);
     const { message, systemPrompt } = body;
 
-    const models = [
-      "deepseek/deepseek-r1-0528:free",
-      "google/gemma-3-12b-it:free",
-      "meta-llama/llama-3.1-8b-instruct:free"
-    ];
+const models = [
+  "deepseek/deepseek-chat-v3-0324:free",
+  "qwen/qwen3-14b:free",
+  "mistralai/mistral-small-3.2-24b-instruct:free",
+  "google/gemma-3n-e4b-it:free"
+];
 
     let lastError = null;
 
