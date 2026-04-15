@@ -2,6 +2,7 @@ exports.handler = async function(event) {
   try {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+    /* ---------------- API KEY CHECK ---------------- */
     if (!OPENROUTER_API_KEY) {
       return {
         statusCode: 500,
@@ -11,8 +12,9 @@ exports.handler = async function(event) {
       };
     }
 
+    /* ---------------- PARSE REQUEST ---------------- */
     const body = JSON.parse(event.body);
-    const { message, systemPrompt } = body;
+    const { message, systemPrompt, attachments = [] } = body;
 
     if (!message) {
       return {
@@ -23,21 +25,55 @@ exports.handler = async function(event) {
       };
     }
 
-    /* ---------------- FETCH LIVE FREE MODELS ---------------- */
-    console.log("Fetching live free models...");
+    /* ---------------- PREPARE FINAL MESSAGE ---------------- */
+    let finalMessage = message;
 
-    const modelResponse = await fetch(
-      "https://openrouter.ai/api/v1/models"
-    );
+    if (attachments.length > 0) {
+      finalMessage +=
+        "\n\nUploaded image(s): " +
+        attachments.map(file => file.name).join(", ");
+    }
 
-    const modelData = await modelResponse.json();
+    /* ---------------- PREFERRED CLEAN MODELS ---------------- */
+    const preferredModels = [
+      "google/gemma-3-12b-it:free",
+      "mistralai/mistral-small-3.2-24b-instruct:free",
+      "deepseek/deepseek-chat-v3-0324:free"
+    ];
 
-    const models = modelData.data
-      .filter(model => model.id.endsWith(":free"))
-      .map(model => model.id)
-      .slice(0, 10);
+    let models = [];
 
-    console.log("Live free models found:", models);
+    try {
+      console.log("Fetching live free models...");
+
+      const modelResponse = await fetch(
+        "https://openrouter.ai/api/v1/models"
+      );
+
+      const modelData = await modelResponse.json();
+
+      const liveModels = modelData.data
+        .filter(model =>
+          model.id.endsWith(":free") &&
+          !model.id.includes("r1") &&
+          !model.id.includes("reasoning") &&
+          !model.id.includes("think") &&
+          !model.id.includes("qwen3")
+        )
+        .map(model => model.id);
+
+      /* Merge preferred models first */
+      models = [
+        ...preferredModels,
+        ...liveModels.filter(m => !preferredModels.includes(m))
+      ].slice(0, 10);
+
+    } catch (err) {
+      console.log("Model fetch failed, using fallback preferred models only");
+      models = preferredModels;
+    }
+
+    console.log("Models to try:", models);
 
     if (!models.length) {
       return {
@@ -67,16 +103,18 @@ exports.handler = async function(event) {
             },
             body: JSON.stringify({
               model,
+              temperature: 0.7,
+              max_tokens: 1200,
               messages: [
                 {
                   role: "system",
                   content:
                     systemPrompt ||
-                    "You are ProposalAI, expert in writing professional business proposals."
+                    "You are ProposalAI. Always respond directly with polished final output only. Never show internal reasoning, analysis, thoughts, or planning steps."
                 },
                 {
                   role: "user",
-                  content: message
+                  content: finalMessage
                 }
               ]
             })
@@ -87,7 +125,7 @@ exports.handler = async function(event) {
 
         console.log("Response for model:", model, data);
 
-        /* Skip unavailable models */
+        /* Skip unavailable/bad models */
         if (
           data?.error?.message?.includes("No endpoints found") ||
           data?.error?.message?.includes("Provider returned error") ||
@@ -108,7 +146,7 @@ exports.handler = async function(event) {
           return {
             statusCode: 200,
             body: JSON.stringify({
-              reply: data.choices[0].message.content,
+              reply: data.choices[0].message.content.trim(),
               modelUsed: model
             })
           };
